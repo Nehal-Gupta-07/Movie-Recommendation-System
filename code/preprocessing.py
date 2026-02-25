@@ -8,9 +8,12 @@ movies = movies.merge(credits,on='title')
 
 def preprocess(movies):
 
-    movies = movies[['id','genres','keywords','title','cast','crew','overview']]
+    movies = movies[['id','genres','keywords','title','cast','crew','overview',
+                      'vote_average','release_date']]
 
-    movies.dropna(inplace=True)
+    movies.dropna(subset=['id','title','overview','genres','keywords','cast','crew'], inplace=True)
+
+    movies['overview_text'] = movies['overview']
 
     movies['cast'] = movies['cast'].apply(convert5)
     movies['genres'] = movies['genres'].apply(convert)
@@ -18,20 +21,21 @@ def preprocess(movies):
     movies['crew'] = movies['crew'].apply(fetch_director)
     movies['overview'] = movies['overview'].apply(lambda x:x.split())
 
-    movies['genres'] = movies['genres'].apply(lambda x:[i.replace(" ","") for i in x])
-    movies['keywords'] = movies['keywords'].apply(lambda x:[i.replace(" ","") for i in x])
-    movies['cast'] = movies['cast'].apply(lambda x:[i.replace(" ","") for i in x])
-    movies['crew'] = movies['crew'].apply(lambda x:[i.replace(" ","") for i in x])
+    movies['genres_display'] = movies['genres'].apply(lambda x:", ".join(x))
 
-    movies['tags'] = movies['overview'] + movies['genres'] + movies['keywords'] + movies['cast'] + movies['crew'] 
+    movies['text_genres'] = movies['genres'].apply(lambda x:" ".join([i.replace(" ","") for i in x]).lower())
+    movies['text_keywords'] = movies['keywords'].apply(lambda x:" ".join([i.replace(" ","") for i in x]).lower())
+    movies['text_cast'] = movies['cast'].apply(lambda x:" ".join([i.replace(" ","") for i in x]).lower())
+    movies['text_crew'] = movies['crew'].apply(lambda x:" ".join([i.replace(" ","") for i in x]).lower())
+    movies['text_overview'] = movies['overview_text'].apply(lambda x:x.lower())
 
-    new_df = movies[['id','title','tags']]
+    movies['year'] = pd.to_datetime(movies['release_date'], errors='coerce').dt.year
+    movies['year'] = movies['year'].fillna(0).astype(int)
 
-    new_df['tags'] = new_df['tags'].apply(lambda x:" ".join(x))
-
-    new_df['tags'] = new_df['tags'].apply(lambda x:x.lower())
+    new_df = movies[['id','title','genres_display','year','vote_average','overview_text',
+                      'text_overview','text_genres','text_keywords','text_cast','text_crew']].copy()
 
     return new_df
 
 new_df = preprocess(movies)
-new_df.to_csv(r"../data/preprocessed_data", encoding='utf-8')
+new_df.to_csv(r"../data/preprocessed_data", index=False, encoding='utf-8')
