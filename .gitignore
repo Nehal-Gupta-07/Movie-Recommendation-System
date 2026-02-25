@@ -1,0 +1,12 @@
+# Ignore virtual environment directory
+venv
+data
+# Python
+__pycache__
+
+#pkl
+*.pkl
+
+#csv
+*.csv
+
