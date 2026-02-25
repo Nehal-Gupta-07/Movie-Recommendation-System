@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,12 +8,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 st.set_page_config(page_title="Movie Recommender", page_icon="🎬", layout="wide")
 
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+EMBEDDINGS_PATH = os.path.join(os.path.dirname(__file__), 'embeddings.pkl')
 EMBEDDING_KEYS = ['overview', 'genres', 'keywords', 'cast', 'crew']
+WIKI_BASE = "https://en.wikipedia.org/wiki/"
 
 
 @st.cache_data
 def load_data():
-    df = pd.read_csv(r"../data/preprocessed_data")
+    df = pd.read_csv(os.path.join(DATA_DIR, 'preprocessed_data'))
     df['genres_display'] = df['genres_display'].fillna('')
     df['overview_text'] = df['overview_text'].fillna('')
     df['vote_average'] = df['vote_average'].fillna(0.0)
@@ -22,30 +26,31 @@ def load_data():
 
 @st.cache_data
 def load_embeddings():
-    return joblib.load("embeddings.pkl")
+    return joblib.load(EMBEDDINGS_PATH)
 
 
-new_df = load_data()
+df = load_data()
 embeddings = load_embeddings()
 
 
 def recommend(movie, weights, count=5, genre_filter=None, year_range=None):
-    movie_index = new_df[new_df['title'] == movie].index[0]
+    movie_index = df[df['title'] == movie].index[0]
 
     weight_sum = sum(weights.values())
-    if weight_sum == 0:
-        norm_weights = {k: 1.0 / len(weights) for k in weights}
-    else:
-        norm_weights = {k: v / weight_sum for k, v in weights.items()}
+    norm_weights = (
+        {k: 1.0 / len(weights) for k in weights}
+        if weight_sum == 0
+        else {k: v / weight_sum for k, v in weights.items()}
+    )
 
-    combined_scores = np.zeros(len(new_df))
+    combined_scores = np.zeros(len(df))
     for key in EMBEDDING_KEYS:
         movie_emb = embeddings[key][movie_index].reshape(1, -1)
         sim = cosine_similarity(movie_emb, embeddings[key])[0]
         combined_scores += norm_weights[key] * sim
 
     scored_indices = sorted(
-        list(enumerate(combined_scores)), reverse=True, key=lambda x: x[1]
+        enumerate(combined_scores), reverse=True, key=lambda x: x[1]
     )
 
     results = []
@@ -53,15 +58,15 @@ def recommend(movie, weights, count=5, genre_filter=None, year_range=None):
         if idx == movie_index:
             continue
 
-        row = new_df.iloc[idx]
+        row = df.iloc[idx]
 
         if genre_filter:
             movie_genres = [g.strip() for g in row['genres_display'].split(',') if g.strip()]
             if not any(g in genre_filter for g in movie_genres):
                 continue
 
-        if year_range:
-            if row['year'] != 0 and not (year_range[0] <= row['year'] <= year_range[1]):
+        if year_range and row['year'] != 0:
+            if not (year_range[0] <= row['year'] <= year_range[1]):
                 continue
 
         results.append({
@@ -79,6 +84,8 @@ def recommend(movie, weights, count=5, genre_filter=None, year_range=None):
     return results
 
 
+# ── Custom CSS ──────────────────────────────────────────────────────────────────
+
 st.markdown("""
 <style>
     .movie-card {
@@ -91,7 +98,7 @@ st.markdown("""
     }
     .movie-card:hover {
         transform: translateY(-4px);
-        box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
     }
     a.movie-title {
         display: block;
@@ -133,34 +140,33 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Header ──────────────────────────────────────────────────────────────────────
+
 st.title("🎬 Movie Recommender System")
 st.caption("Select a movie you like, tweak the filters, and discover similar films.")
 
-# --- Sidebar filters ---
-all_genres = sorted(set(
+# ── Sidebar ─────────────────────────────────────────────────────────────────────
+
+all_genres = sorted({
     g.strip()
-    for genres_str in new_df['genres_display'].dropna()
+    for genres_str in df['genres_display'].dropna()
     for g in genres_str.split(',')
     if g.strip()
-))
+})
 
-valid_years = new_df[new_df['year'] > 0]['year']
+valid_years = df.loc[df['year'] > 0, 'year']
 min_year = int(valid_years.min()) if len(valid_years) > 0 else 1900
 max_year = int(valid_years.max()) if len(valid_years) > 0 else 2025
 
 with st.sidebar:
     st.header("Filters")
-
     num_recommendations = st.slider("Number of recommendations", 1, 20, 5)
-
     selected_genres = st.multiselect("Filter by genre", all_genres)
-
     year_range = st.slider("Release year range", min_year, max_year, (min_year, max_year))
 
     st.markdown("---")
     st.header("Similarity Weights")
     st.caption("Adjust how much each feature influences recommendations.")
-
     w_overview = st.slider("Plot overview", 0.0, 1.0, 0.4, 0.05)
     w_genres = st.slider("Genres", 0.0, 1.0, 0.2, 0.05)
     w_keywords = st.slider("Keywords", 0.0, 1.0, 0.2, 0.05)
@@ -175,15 +181,16 @@ with st.sidebar:
         'crew': w_crew,
     }
 
-# --- Movie selection ---
-selected_movie_name = st.selectbox("Choose a movie you like", new_df['title'].values)
+# ── Main content ────────────────────────────────────────────────────────────────
+
+selected_movie = st.selectbox("Choose a movie you like", df['title'].values)
 
 if st.button("🔍 Get Recommendations", type="primary", use_container_width=True):
-    genre_filter = selected_genres if selected_genres else None
+    genre_filter = selected_genres or None
     year_filter = year_range if year_range != (min_year, max_year) else None
 
     recommendations = recommend(
-        selected_movie_name,
+        selected_movie,
         weights=feature_weights,
         count=num_recommendations,
         genre_filter=genre_filter,
@@ -194,10 +201,9 @@ if st.button("🔍 Get Recommendations", type="primary", use_container_width=Tru
         st.warning("No movies found matching your filters. Try broadening the genre or year range.")
     else:
         st.markdown("---")
-        st.subheader(f"Movies similar to *{selected_movie_name}*")
+        st.subheader(f"Movies similar to *{selected_movie}*")
 
         cols_per_row = min(5, len(recommendations))
-
         for row_start in range(0, len(recommendations), cols_per_row):
             row_items = recommendations[row_start:row_start + cols_per_row]
             cols = st.columns(cols_per_row)
@@ -205,11 +211,10 @@ if st.button("🔍 Get Recommendations", type="primary", use_container_width=Tru
             for col, movie in zip(cols, row_items):
                 similarity_pct = f"{movie['score'] * 100:.0f}%"
                 year_str = str(movie['year']) if movie['year'] > 0 else "N/A"
-                wiki_url = f"https://en.wikipedia.org/wiki/{quote(movie['title'].replace(' ', '_'))}"
+                wiki_url = WIKI_BASE + quote(movie['title'].replace(' ', '_'))
 
                 with col:
-                    st.markdown(
-                        f"""
+                    st.markdown(f"""
                         <div class="movie-card">
                             <a href="{wiki_url}" target="_blank" class="movie-title">{movie['title']}</a>
                             <p class="movie-meta">
@@ -219,6 +224,4 @@ if st.button("🔍 Get Recommendations", type="primary", use_container_width=Tru
                             <p class="movie-meta">{movie['genres']}</p>
                             <span class="similarity-badge">{similarity_pct} match</span>
                         </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    """, unsafe_allow_html=True)

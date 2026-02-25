@@ -1,27 +1,19 @@
 import ast
 
 
-def convert(obj):
-    l=[]
-    for i in ast.literal_eval(obj):
-        l.append(i['name'])
-    return l
+def extract_names(json_str):
+    """Extract all 'name' values from a JSON-encoded list of dicts."""
+    return [item['name'] for item in ast.literal_eval(json_str)]
 
-def convert5(obj):
-    count=0
-    l=[]
-    for i in ast.literal_eval(obj):
-        if count!=5:
-            l.append(i['name'])
-            count+=1
-        else:
-            break
-    return l
 
-def fetch_director(obj):
-    l=[]
-    for i in ast.literal_eval(obj):
-        if i['job']=='Director':
-            l.append(i['name'])
-            break
-    return l
+def extract_top_names(json_str, limit=5):
+    """Extract the first `limit` 'name' values from a JSON-encoded list of dicts."""
+    return [item['name'] for item in ast.literal_eval(json_str)[:limit]]
+
+
+def extract_director(json_str):
+    """Extract the director's name from a JSON-encoded crew list."""
+    for member in ast.literal_eval(json_str):
+        if member['job'] == 'Director':
+            return [member['name']]
+    return []
